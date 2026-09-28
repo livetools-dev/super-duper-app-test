@@ -6,7 +6,6 @@
 import { useState } from "react";
 import {
   Badge,
-  Card,
   Empty,
   Fieldset,
   Form,
@@ -16,14 +15,26 @@ import {
   RadioGroup,
   Readout,
   Row,
+  Num,
   Specs,
   Stack,
+  Table,
   UnitToggle,
   useUnitSystem,
 } from "@livetools/ui";
 import { QUANTITIES, SHAPES, START_JOB, type Job, type Quantity, type Shape } from "../data/lathe";
 import { formatFigure, unitOf } from "../lib/format";
 import { cuttingSpeedAt, judge, spindleSpeed, type Fit } from "../lib/workholding";
+import type { TableColumn, TableRow } from "@livetools/ui";
+
+const COLUMNS: readonly TableColumn[] = [
+  { id: "option", label: "Option", rowHeader: true },
+  { id: "fit", label: "Fit" },
+  { id: "speed", label: "Cutting speed on this part", kind: "number" },
+  { id: "changeOver", label: "Change-over" },
+  { id: "suits", label: "Suits" },
+  { id: "catch", label: "Main catch" },
+];
 
 type Entered = { [K in keyof Job]: Job[K] extends number ? number | null : Job[K] };
 
@@ -58,6 +69,57 @@ export function SmallParts() {
   const needed = job === null ? null : spindleSpeed(job.cuttingSpeed, job.partDiameter);
   const reached = job === null || needed === null ? null : cuttingSpeedAt(Math.min(needed, job.chuckMaxRpm), job.partDiameter);
   const options = job === null ? [] : judge(job, system);
+  const best = options.filter((o) => o.fit === "good").map((o) => o.title.toLowerCase());
+
+  const rows: readonly TableRow[] = options.map((o) => ({
+    id: o.id,
+    label: o.title,
+    cells: {
+      option: o.title,
+      fit: <FitBadge fit={o.fit} />,
+      speed: (
+        <Num>
+          {formatFigure(o.reached, "speed", system)} {unitOf("speed", system)}
+          {o.speedLimited ? " (held down)" : ""}
+        </Num>
+      ),
+      changeOver: o.changeOver,
+      suits: o.suits,
+      catch: o.catch,
+    },
+  }));
+
+  const detail = (row: TableRow) => {
+    const o = options.find((x) => x.id === row.id);
+    if (o === undefined) return null;
+    return (
+      <Stack gap="sm">
+        <Row>
+          <Prose>
+            <h3>For</h3>
+            <ul>
+              {o.pros.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          </Prose>
+          <Prose>
+            <h3>Against</h3>
+            {o.cons.length === 0 ? (
+              <p>Nothing major for this part.</p>
+            ) : (
+              <ul>
+                {o.cons.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            )}
+          </Prose>
+        </Row>
+        <Specs items={o.needs.map((n) => ({ key: n.label, label: n.label, value: n.value }))} />
+      </Stack>
+    );
+  };
 
   return (
     <Stack>
@@ -191,7 +253,12 @@ export function SmallParts() {
         />
       </Row>
       <Prose>
-        <h2>The options</h2>
+        <h2>The options, best first</h2>
+        {best.length > 0 ? (
+          <p>
+            For this part: <strong>{best.join(" or ")}</strong>. Open a row for the full for and against.
+          </p>
+        ) : null}
       </Prose>
       {job === null ? (
         <Empty title="No options yet">
@@ -199,24 +266,9 @@ export function SmallParts() {
             <p>Fill in every figure above, each greater than nought, and the options show here.</p>
           </Prose>
         </Empty>
-      ) : null}
-      {options.map((option) => (
-        <Card key={option.id} as="section" title={option.title} titleAs="h3" actions={<FitBadge fit={option.fit} />}>
-          <Stack gap="sm">
-            <Prose>
-              <p>{option.summary}</p>
-            </Prose>
-            <Specs bordered items={option.needs.map((n) => ({ key: n.label, label: n.label, value: n.value }))} />
-            <Prose>
-              <ul>
-                {option.reasons.map((reason) => (
-                  <li key={reason}>{reason}</li>
-                ))}
-              </ul>
-            </Prose>
-          </Stack>
-        </Card>
-      ))}
+      ) : (
+        <Table label="Ways to hold the part" columns={COLUMNS} rows={rows} detail={detail} empty={{ title: "No options" }} />
+      )}
       <Prose>
         <p>A guide for the first conversation with the shop, not a recommendation for a particular product.</p>
       </Prose>
